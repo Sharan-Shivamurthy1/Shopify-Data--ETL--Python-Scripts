@@ -1,0 +1,189 @@
+1)Shopify Customers using REST API
+
+import shopify
+import pandas as pd
+import requests
+import sqlalchemy
+from sqlalchemy import create_engine
+from snowflake.sqlalchemy import URL
+from sqlalchemy.sql import text as sa_text
+
+# Initialize the Snowflake connection
+engine = create_engine(URL(
+    account='',
+    user='',
+    password='',
+    warehouse='',
+    database='',
+    schema='',
+    role = ''
+))
+connection=engine.raw_connection()
+cursor=connection.cursor()
+maxdate_query = "SELECT MAX(UPDATED_AT) FROM CUSTOMERS"
+cursor.execute(maxdate_query)
+results = str(cursor.fetchall()[0][0])
+#print (type(results))
+#results
+# #******************** Shopify API credentials*****************************************************************************
+store_name = ''
+access_token = ''
+api_version = '2021-10'
+secret=''
+key=''
+shopify.Session.setup(api_key=key,secret=secret)
+
+# #********************************* Construct the API URL*******************************************************************
+url = f"https://{key}:{secret}@{store_name}.myshopify.com/admin/api/{api_version}/customers.json"
+
+# # ***************************************Set the headers*******************************************************************
+headers = {
+     'Content-Type': 'application/json',
+     'X-Shopify-Access-Token': access_token
+ }
+parameters={'updated_at_min': results,'limit':50}
+#print(parameters)
+full_df = pd.DataFrame() 
+# response = requests.get(url, params = parameters, headers=headers) 
+# data = response.json() 
+# data 
+while True: 
+    df = pd.DataFrame() 
+    response = requests.get(url, params = parameters, headers=headers)
+    data = response.json() 
+    df = pd.DataFrame(data['customers']) 
+    print(df.shape) 
+    full_df = pd.concat([full_df,df])    
+    
+    if df.shape[0] >= parameters['limit']: 
+        url = response.links['next']['url'] 
+    else: 
+        break
+        
+#full_df.info()
+address_df = pd.json_normalize(full_df['default_address'])
+address_df = address_df.rename(columns={'id': 'address_id'})
+address_df.columns = address_df.columns.str.upper()
+address_df['ADDRESS_ID'] = address_df['ADDRESS_ID'].astype(str)
+address_df['CUSTOMER_ID'] = address_df['CUSTOMER_ID'].astype(str)
+address_df
+#print(address_df.shape)
+*********************************************************************************************************************************
+#full_df
+# address_df.info()
+# address_df['CUSTOMER_ID'] = address_df['CUSTOMER_ID'].astype(str)
+# address_df['CUSTOMER_ID']
+#full_df.info()
+
+#address_dfaddress_df = address_df.rename(columns={'id': 'address_id'})
+#print(type('address_id'))
+#address_df.columns = address_df.columns.str.upper()
+#address_df
+#print(address_df.shape)
+************************************************************************************************************************************
+
+
+
+2)****************************************Extraction without REST API*****************************************************************
+import shopify
+import pandas as pd
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+#******************** Shopify API credentials*****************************************************************************
+token = ''
+merchant = ''
+api_session = shopify.Session(merchant, '2023-01', token)
+shopify.ShopifyResource.activate_session(api_session)
+#**********************Function to fetch records from shopify*************************************************************
+def get_data(object_name):
+    all_data = []
+    attribute = getattr(shopify, object_name)
+    data = attribute.find(since_id=0, limit=250)
+    for d in data:
+        all_data.append(d)
+    while data.has_next_page():
+        data = data.next_page()
+        for d in data:
+            all_data.append(d)
+    return all_data
+#******************************Creating a dataframe************************************************************************
+customers = get_data('Customer')
+#df = pd.DataFrame([customer.attributes])
+customer_data = []
+for customer in customers:
+    customer_attributes = customer.attributes
+    #customer_data.append(customer.attributes)
+    for a in customer.addresses:
+        address_attributes=a.attributes
+        customer_data.append(a.attributes)
+
+df = pd.DataFrame(customer_data)
+df = df.rename(columns={'id': 'Customer_ID'})
+df.columns = df.columns.str.upper()
+df.head()
+# a=df.shape[0]
+# b=df.shape[1]
+# print(a,b)
+
+*********************************************************************************************************************************
+
+
+
+3)*******************************************************API method*****************************************************************
+import requests
+import pandas as pd
+import shopify
+#******************** Shopify API credentials*****************************************************************************
+store_name = ''
+access_token = ''
+api_version = ''
+
+#********************************* Construct the API URL*******************************************************************
+url = f"https://{store_name}.myshopify.com/admin/api/{api_version}/customers.json"
+
+# ***************************************Set the headers*******************************************************************
+headers = {
+    'Content-Type': 'application/json',
+    'X-Shopify-Access-Token': access_token
+}
+
+#****************************************Send the GET request**************************************************************
+response = requests.get(url, headers=headers)
+data = response.json()#extracts the JSON data from the response and parses it into a Python dictionary.
+
+#***************************************************************************************************************************
+
+# Extract Customer data from the response
+# accesses the 'customers' key in the extracted JSON data dictionary.
+#It retrieves the value associated with the 'customers' key, which is a list of Customer objects. 
+customers = data['customers']
+#***************************************************************************************************************************
+# Create a list to store Customer data dictionaries
+customer_data_list = []
+
+#******************************** Iterate over the customers and append data to the list***********************************
+for customer in customers:
+    # Access the 'addresses' key to retrieve the list of addresses
+    addresses = customer['addresses']
+    # Iterate over the addresses to find the desired addresses
+    for address in addresses:       
+        customer_data = {
+            'Customer_FirstName': customer['first_name'],
+            'Customer_LastName': customer['last_name'],
+            'Customer_ID': customer['id'],
+            'Email': customer['email'],           
+            'Created_Date': customer['created_at'],
+            'Updated_Date':customer['updated_at'],
+            'Orders_Count':customer['orders_count'],
+            'Address1': address['address1'],
+        }          
+        customer_data_list.append(customer_data)
+
+#************************ Create a DataFrame from the list of Customer data dictionaries***********************************
+customers_df = pd.DataFrame(customer_data_list)
+customers_df.head()
+# a=customers_df.shape[0]
+# b=customers_df.shape[1]
+# print(a,b)
+
+********************** Enter Shopify API credentials and Snowflake connection details as applicable***************************

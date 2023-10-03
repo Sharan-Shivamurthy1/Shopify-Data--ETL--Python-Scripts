@@ -1,0 +1,76 @@
+Shopify Transactions using REST API
+
+import shopify
+import pandas as pd
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+#******************** Shopify API credentials*****************************************************************************
+token = ''
+merchant = ''
+api_session = shopify.Session(merchant, '2023-01', token)
+shopify.ShopifyResource.activate_session(api_session)
+#**********************Function to fetch records from shopify*************************************************************
+def get_data(object_name):
+    all_data = []
+    attribute = getattr(shopify, object_name)
+    data = attribute.find(since_id=0, limit=250)
+    for d in data:
+        all_data.append(d)
+    while data.has_next_page():
+        data = data.next_page()
+        for d in data:
+            all_data.append(d)
+    return all_data
+#******************************Creating a dataframe************************************************************************
+payments = get_data('Transactions')
+
+#df = pd.DataFrame([product_attributes])
+payment_data = []
+for payment in payments:
+    payment_attributes = payment.attributes
+    payment_data.append(payment.attributes)
+
+df = pd.DataFrame(payment_data)
+df.head()
+# a=df.shape[0]
+# b=df.shape[1]
+# print(a,b)
+******************************************************************************************************************************
+2)**********************************************Alternate Script*************************************************************
+
+import shopify
+import pandas as pd
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+#******************** Shopify API credentials*****************************************************************************
+token = ''
+merchant = ''
+api_session = shopify.Session(merchant, '2023-01', token)
+shopify.ShopifyResource.activate_session(api_session)
+#**********************Function to fetch records from shopify*************************************************************
+def get_data(object_name):
+    all_data = []
+    attribute = getattr(shopify, object_name)
+    data = attribute.find(since_id=0, limit=250)
+    for d in data:
+        all_data.append(d)
+    while data.has_next_page():
+        data = data.next_page()
+        for d in data:
+            all_data.append(d)
+    return all_data
+#******************************Creating a dataframe************************************************************************
+payments = get_data('Transactions')
+
+#df = pd.DataFrame([product_attributes])
+payment_data = []
+for payment in payments:
+    payment_attributes = payment.attributes
+    payment_data.append(payment.attributes)
+
+df = pd.DataFrame(payment_data)
+df.head()
+# a=df.shape[0]
+# b=df.shape[1]
+# print(a,b)
+*************************************************Enter Shopify API credentials and Snowflake connection details as applicable******************

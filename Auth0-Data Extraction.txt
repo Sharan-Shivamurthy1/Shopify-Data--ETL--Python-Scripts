@@ -1,0 +1,72 @@
+import pandas as pd
+import http.client
+import json
+import requests
+import datetime as dt
+from datetime import date
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+
+
+# ********************Client IDs and Secrets******************************* #
+
+client_id = ''
+client_secret = ''
+business_name = ''
+
+# ********************getting the access token******************************* #
+
+conn = http.client.HTTPSConnection(business_name+".eu.auth0.com")
+
+payload = "{\"client_id\":\""+client_id+"\",\"client_secret\":\""+client_secret+"\",\"audience\":\"https://"+business_name+".eu.auth0.com/api/v2/\",\"grant_type\":\"client_credentials\"}"
+
+token_headers = { 'content-type': "application/json" }
+
+conn.request("POST", "/oauth/token", payload, token_headers)
+
+res = conn.getresponse()
+data = res.read()
+# data
+
+tokendetails_json = data.decode('utf8').replace("'", '"')
+# tokendetails_json
+
+tokendetails = json.loads(tokendetails_json)
+# print(tokendetails)
+
+# # ********************Setting Header for API Call******************************* #
+headers = { 'content-type': "application/json","Authorization": "Bearer " + tokendetails['access_token'] }
+
+updated_at = '2023-08-28'
+
+
+flag = True
+pagenumber = 0
+full_data = pd.DataFrame()
+while(flag==True):
+    try: 
+        conn.request("GET","/api/v2/users?q=updated_at%3A%22"+updated_at+"%22&include_totals=true&page="+str(pagenumber)+"&search_engine=v3", headers=headers)
+    except Exception as e:
+        print(e)
+        
+    res = conn.getresponse()
+    data = res.read()
+
+    result_data_json = data.decode('utf8')
+    data = json.loads(result_data_json)
+    
+    user_data = pd.DataFrame()
+    user_data = pd.DataFrame(data['users'])
+    full_data = pd.concat([full_data, user_data])
+    
+    limit = data['length']
+
+
+    if (limit == 50):
+        pagenumber += 1
+    else:
+        flag=False
+     
+    print(limit, " ", pagenumber, " ", flag)
+####*********************************************************Client ID and Secrets should be used as applicable***************************************************************************
+ 

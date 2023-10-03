@@ -1,0 +1,43 @@
+Shopify Inventory
+
+%%time
+import pandas as pd
+import shopify
+import snowflake.connector
+import sqlalchemy
+from sqlalchemy import create_engine
+from snowflake.sqlalchemy import URL
+from sqlalchemy.sql import text as sa_text
+
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+
+# Shopify API credentials
+token = ''
+merchant = ''
+api_session = shopify.Session(merchant, '2023-01', token)
+shopify.ShopifyResource.activate_session(api_session)
+
+# Function to fetch inventory data from Shopify
+def get_inventory_data():
+    all_inventory_data = []
+    products = shopify.Product.find()
+
+    for product in products:
+        for variant in product.variants:
+            inventory_data = {
+                'Product_ID': product.id,
+                'Product_Title': product.title,
+                'Variant_ID': variant.id,
+                'Variant_Title': variant.title,
+                'Inventory_Quantity': variant.inventory_quantity
+            }
+            all_inventory_data.append(inventory_data)
+
+    return all_inventory_data
+
+# Creating a dataframe with inventory data
+inventory_data = get_inventory_data()
+df = pd.DataFrame(inventory_data)
+df.head()
+*************************************************Enter Shopify API credentials and Snowflake connection details as applicable******************

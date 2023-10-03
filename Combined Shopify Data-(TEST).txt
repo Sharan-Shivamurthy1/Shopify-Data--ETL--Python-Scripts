@@ -1,0 +1,85 @@
+Combined Shopify Data-(TEST)
+
+%%time
+import pandas as pd
+import shopify
+from sqlalchemy import create_engine
+import sqlalchemy
+import snowflake.connector
+
+# Set pandas display options
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+
+# Snowflake connection parameters
+snowflake_account = ''
+snowflake_user = ''
+snowflake_password = ''
+snowflake_warehouse = ''
+snowflake_database = ''
+snowflake_schema = ''
+
+# Initialize the Snowflake connection
+snowflake_conn = snowflake.connector.connect(
+    account=snowflake_account,
+    user=snowflake_user,
+    password=snowflake_password,
+    warehouse=snowflake_warehouse,
+    database=snowflake_database,
+    schema=snowflake_schema
+)
+
+# Create SQLAlchemy engine for Snowflake connection
+engine = create_engine(f'snowflake://{snowflake_user}:{snowflake_password}@{snowflake_account}/{snowflake_database}/{snowflake_schema}')
+
+# Shopify API credentials
+token = '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'
+merchant = '1b1228-2'
+api_version = '2023-01'
+
+# Object list to fetch from Shopify
+object_list = ['Customer', 'Order', 'Product', 'Transactions', 'Payouts']
+
+# Function to fetch records from Shopify
+def get_data(object_name):
+    all_data = []
+    attribute = getattr(shopify, object_name)
+    data = attribute.find(since_id=0, limit=250)
+    for d in data:
+        all_data.append(d)
+    while data.has_next_page():
+        data = data.next_page()
+        for d in data:
+            all_data.append(d)
+    return all_data
+
+# Function to load data to Snowflake
+# def load_to_snowflake(df, obj):
+#     # Create table name
+#     #table_name = f"{obj}"
+
+#     # Load DataFrame to Snowflake
+#     #df.to_sql(obj, sqlalchemy.engine.Engine, schema=snowflake_schema, if_exists='append', index=True, index_label=None, chunksize=None, dtype=None, method=None)
+#     print(obj, "Data is Loaded to Snowflake.")
+
+# Iterate over objects
+for obj in object_list:
+    # Fetch data from Shopify
+    resp_data = get_data(obj)
+    data_list = []
+    for d in resp_data:
+        data_list.append(d.attributes)        
+    df = pd.DataFrame(data_list)
+
+    # Rename and format columns
+    df.rename(columns={'id': obj+'_id'}, inplace=True)
+    df.columns = df.columns.str.upper()
+
+    # Print information
+    print(obj, "Data is Extracted.")
+    print(obj, df.shape)
+    df=df.astype(str)
+    # Load DataFrame to Snowflake
+    df.to_sql(obj, con=engine, if_exists='append', index=False)
+    print(obj, "Data is Loaded to Snowflake.")
+***************************************************************************************************************************************************************

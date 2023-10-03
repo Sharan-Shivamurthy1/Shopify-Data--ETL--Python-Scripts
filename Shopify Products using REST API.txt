@@ -1,0 +1,170 @@
+ Shopify Products using REST API
+ 
+import shopify
+import pandas as pd
+import requests
+import sqlalchemy
+from sqlalchemy import create_engine
+from snowflake.sqlalchemy import URL
+from sqlalchemy.sql import text as sa_text
+
+# Initialize the Snowflake connection
+engine = create_engine(URL(
+    account='',
+    user='',
+    password='',
+    warehouse='',
+    database='',
+    schema='',
+    role = ''
+))
+connection=engine.raw_connection()
+cursor=connection.cursor()
+maxdate_query = "SELECT MAX(UPDATED_AT) FROM PRODUCTS"
+cursor.execute(maxdate_query)
+results = str(cursor.fetchall()[0][0])
+#print (type(results))
+#results
+# #******************** Shopify API credentials*****************************************************************************
+store_name = ''
+access_token = ''
+api_version = '2021-10'
+secret=''
+key=''
+shopify.Session.setup(api_key=key,secret=secret)
+
+# #********************************* Construct the API URL*******************************************************************
+url = f"https://{key}:{secret}@{store_name}.myshopify.com/admin/api/{api_version}/products.json"
+
+# # ***************************************Set the headers*******************************************************************
+headers = {
+     'Content-Type': 'application/json',
+     'X-Shopify-Access-Token': access_token
+ }
+parameters={'updated_at_min': results,'limit':50}
+#print(parameters)
+full_df = pd.DataFrame() 
+# response = requests.get(url, params = parameters, headers=headers) 
+# data = response.json() 
+# data 
+while True: 
+    df = pd.DataFrame() 
+    response = requests.get(url, params = parameters, headers=headers)
+    data = response.json() 
+    df = pd.DataFrame(data['products']) 
+    print(df.shape) 
+    full_df = pd.concat([full_df,df])    
+    
+    if df.shape[0] >= parameters['limit']: 
+        url = response.links['next']['url'] 
+    else: 
+        break
+#full_df        
+variants_df = full_df[['variants']]
+variants_df = variants_df.explode('variants')
+variants_df = pd.json_normalize(variants_df['variants'])
+variants_df = variants_df.rename(columns={'id': 'variants_id'})
+variants_df
+*******************testing***************************************************************
+#variants_df = full_df[['variants']]
+#variants_df = variants_df.explode('variants')
+#variants_df = pd.json_normalize(variants_df['variants'])
+#variants_df = variants_df.rename(columns={'id': 'variants_id'})
+#variants_df
+
+2)***************************************************Products using API***************************************************************
+
+import requests
+import pandas as pd
+
+#***************************************************************************************************************************
+# Shopify API credentials
+store_name = ''
+access_token = ''
+api_version = '2021-10'
+#***************************************************************************************************************************
+# Construct the API URL
+url = f"https://{store_name}.myshopify.com/admin/api/{api_version}/products.json"
+#***************************************************************************************************************************
+# Set the headers
+headers = {
+    'Content-Type': 'application/json',
+    'X-Shopify-Access-Token': access_token
+}
+#***************************************************************************************************************************
+# Send the GET request
+response = requests.get(url, headers=headers)
+data = response.json()#extracts the JSON data from the response and parses it into a Python dictionary.
+
+#***************************************************************************************************************************
+
+# Extract product data from the response
+# accesses the 'products' key in the extracted JSON data dictionary.
+#It retrieves the value associated with the 'products' key, which is a list of product objects. 
+products = data['products']
+#***************************************************************************************************************************
+# Create a list to store product data dictionaries
+product_data_list = []
+#***************************************************************************************************************************
+# Iterate over the products and append data to the list
+for product in products:
+    # Access the 'variants' key to retrieve the list of variants
+    variants = product['variants']
+    # Iterate over the variants to find the desired variant
+    for variant in variants:
+        # Check if the variant is the default variant (you can modify the condition based on your requirement)
+        if variant['title'] == 'Default Title':
+            product_data = {
+                'Product_Id': variant['product_id'],
+                'Product': product['title'],
+                'Status': product['status'],
+                'Inventory Quantity': variant['inventory_quantity'],
+                'Vendor': product['vendor'],
+                'Type': product['product_type']        
+            }
+            product_data_list.append(product_data)
+
+# Create a DataFrame from the list of product data dictionaries
+products_df = pd.DataFrame(product_data_list)
+products_df.head()
+
+**************************************************************************************************************************************
+3)***************************************Products without API***************************************************************************
+
+import shopify
+import pandas as pd
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+#******************** Shopify API credentials*****************************************************************************
+token = ''
+merchant = ''
+api_session = shopify.Session(merchant, '2023-01', token)
+shopify.ShopifyResource.activate_session(api_session)
+#**********************Function to fetch records from shopify*************************************************************
+def get_data(object_name):
+    all_data = []
+    attribute = getattr(shopify, object_name)
+    data = attribute.find(since_id=0, limit=250)
+    for d in data:
+        all_data.append(d)
+    while data.has_next_page():
+        data = data.next_page()
+        for d in data:
+            all_data.append(d)
+    return all_data
+#******************************Creating a dataframe************************************************************************
+products = get_data('Product')
+
+#df = pd.DataFrame([product_attributes])
+product_data = []
+for product in products:
+    product_attributes = product.attributes
+    product_data.append(product.attributes)
+
+df = pd.DataFrame(product_data)
+df = df.rename(columns={'id': 'Product_ID'})
+df.head()
+# a=df.shape[0]
+# b=df.shape[1]
+# print(a,b)
+*************************************************Enter Shopify API credentials and Snowflake connection details as applicable******************
