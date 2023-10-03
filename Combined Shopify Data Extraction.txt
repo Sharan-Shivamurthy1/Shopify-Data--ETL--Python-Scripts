@@ -1,0 +1,172 @@
+import shopify
+import pandas as pd
+import requests
+import time
+import logging
+
+import sqlalchemy
+from sqlalchemy import create_engine
+from snowflake.sqlalchemy import URL
+from sqlalchemy.sql import text as sa_text
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+
+# Initialize the Snowflake connection
+engine = create_engine(URL(
+    account='',
+    user='',
+    password='',
+    warehouse='',
+    database='',
+    schema='',
+))
+connection=engine.raw_connection()
+cursor=connection.cursor()
+
+logger = logging.getLogger(__name__)
+store_name = ''
+access_key = ''
+access_secret= ''
+access_token = ''
+
+
+shopify.Session.setup(api_key=access_key, secret=access_secret)
+
+
+headers = {
+     'Content-Type': 'application/json',
+     'X-Shopify-Access-Token': access_token
+ }
+
+
+def remove_timezone_offset(date_string):
+    
+    date_string = date_string.split('+')[0]
+    return pd.to_datetime(date_string)
+
+
+
+# cursor.execute(f"SELECT MAX(UPDATED_AT) FROM ORDERS;")
+# results = str(cursor.fetchall()[0][0])
+
+parameters= {
+#     'updated_at_min': results,
+    'limit' : 50
+}
+
+
+
+url=f"https://{access_key}:{access_secret}@{store_name}.myshopify.com/admin/api/2021-10/orders.json?status=any"
+
+order_df = pd.DataFrame()
+while True:
+    df = pd.DataFrame()
+    response = requests.get(url, params = parameters, headers=headers)
+    data = response.json()
+
+    df = pd.DataFrame(data['orders'])
+#     print(df.shape)
+    order_df = pd.concat([order_df,df])
+
+    if 'next' in response.links:
+        url = response.links['next']['url']
+
+    else:
+        break
+
+print("Orders Data Before Transaformation: ", order_df.shape)
+
+if order_df.shape[0] > 0:
+    
+    line_items = order_df[['id','line_items']]
+    cust_df = order_df[['id','customer']].rename(columns={'id':'order_id'})
+
+    cust_normal = pd.json_normalize(cust_df['customer'])[['id']].rename(columns={'id':'customer_id'})
+    cust_df = cust_df.reset_index(drop=True)
+    cust_df = pd.concat([cust_df['order_id'],cust_normal], axis=1)
+
+
+
+
+    order_df = pd.merge(order_df, cust_df, left_on='id', right_on = 'order_id')
+    order_df.drop(columns=['order_id'], inplace=True)
+
+    order_df = order_df.astype('str')
+    order_df.rename(columns={'id':'order_id'}, inplace=True)
+    order_df = order_df.astype({'order_id' : 'int64', 'customer_id': 'int64'})
+
+
+
+    order_date_list = ['created_at', 'processed_at', 'updated_at']
+    for date in order_date_list:
+        order_df[date] = order_df[date].apply(remove_timezone_offset)
+
+    order_df.columns = order_df.columns.str.upper()
+    print("Order data: ", order_df.shape)
+
+
+
+    line_items.rename(columns={'id': 'order_id'}, inplace=True)
+    line_items_df = line_items.explode('line_items')
+
+    line_items_norm_df = pd.json_normalize(line_items_df['line_items'], sep = '_')
+    line_items_norm_df['order_id'] = line_items_df['order_id'].reset_index(drop=True)
+
+    line_items_norm_df.rename(columns={'id': 'line_item_id'}, inplace=True)
+    line_items_norm_df = line_items_norm_df.astype('str')
+
+    line_items_norm_df = line_items_norm_df.astype({'line_item_id':'Int64', 'product_id':'Int64',
+                                                            'variant_id':'Int64', 'order_id': 'Int64'})
+
+    line_items_norm_df.columns = line_items_norm_df.columns.str.upper()
+    print("Line_Items: ", line_items_norm_df.shape)
+
+ ######################## Getting Transaction Data for each order #################################
+    
+    print("***Each order Transactions are being loaded.***")
+
+    order_ids = list(order_df['ORDER_ID'])
+    transaction_df = pd.DataFrame()
+
+    for oid in order_ids:
+        df = pd.DataFrame()
+        transaction_url = f"https://{access_key}:{access_secret}@{store_name}.myshopify.com/admin/api/2023-04/orders/{oid}/transactions.json"
+        response = requests.get(transaction_url, headers=headers)
+#     #     print(oid, ": ",response.status_code)
+        data = response.json()
+        data = data['transactions']
+        df = pd.DataFrame(data)
+        transaction_df = pd.concat([transaction_df,df])
+        time.sleep(1)
+
+    print("***Transactions are Loaded.***")
+
+    transaction_date_list = ['created_at', 'processed_at']
+
+    for tra_date in transaction_date_list:
+        transaction_df[tra_date] = transaction_df[tra_date].apply(remove_timezone_offset)
+
+    transaction_df = transaction_df.astype('str')
+    transaction_df.rename(columns={'id':'transaction_id', 'authorization' : 'transaction_authorization'}, inplace=True)
+    transaction_df = transaction_df.astype({'transaction_id' : 'int64', 'order_id': 'int64'})
+    transaction_df.columns = transaction_df.columns.str.upper()
+    print("Order Trnasactions: ", transaction_df.shape)
+
+    print("Orders, Line Items and Transacitons data is ready to be loaded.")
+
+
+#     try:
+#         order_df.drop(columns=['MERCHANT_OF_RECORD_APP_ID'], inplace = True)
+#         order_df.to_sql('orders', con=engine, index=False, if_exists='append', chunksize = 15000)
+#         print("Order Data is loaded")
+#         transaction_df.to_sql('order_transactions', con=engine, index=False, if_exists='append', chunksize = 15000)
+#         print("Transactions Data is loaded")
+#         line_items_norm_df.to_sql('orders_line_items', con=engine, index=False, if_exists='append', chunksize = 15000)
+#         print("Line Items Data is loaded")
+        
+#     except Exception as e:
+#         logger.error("ERROR: %s", str(e))
+
+else:
+print("Nothing to load.")
+**********************************Enter Shopify and Snowflake details as applicable***********************************
