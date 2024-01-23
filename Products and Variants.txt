@@ -1,0 +1,110 @@
+import shopify
+import pandas as pd
+import requests
+import logging
+
+import sqlalchemy
+from sqlalchemy import create_engine
+from snowflake.sqlalchemy import URL
+
+# Initialize the Snowflake connection
+engine = create_engine(URL(
+    account='',
+    user='',
+    password='',
+    warehouse='',
+    database='',
+    schema='',
+
+))
+connection=engine.raw_connection()
+cursor=connection.cursor()
+
+
+logger = logging.getLogger(__name__)
+
+store_name = ''
+access_key = ''
+access_secret= ''
+access_token = ''
+
+
+shopify.Session.setup(api_key=access_key, secret=access_secret)
+
+
+def remove_timezone_offset(date_string):
+    
+    date_string = date_string.split('+')[0]
+    return pd.to_datetime(date_string)
+
+headers = {
+     'Content-Type': 'application/json',
+     'X-Shopify-Access-Token': access_token
+ }
+
+parameters= {
+    'limit' : 50
+}
+
+
+
+
+product_df = pd.DataFrame()
+url=f"https://{access_key}:{access_secret}@{store_name}.myshopify.com/admin/api/2021-10/products.json"
+
+
+while True:
+    df = pd.DataFrame()
+    response = requests.get(url, params = parameters, headers=headers)
+    data = response.json()
+
+    df = pd.DataFrame(data['products'])
+#     print(df.shape)
+    product_df = pd.concat([product_df,df])
+
+    if 'next' in response.links:
+        url = response.links['next']['url']
+
+    else:
+        break
+
+print("Product data before transformation: ", product_df.shape)
+
+if product_df.shape[0] > 0 :
+    
+    variants_df = product_df[['variants']]
+    product_df = product_df.astype('str')
+
+    product_df = product_df.astype({'id':'Int64'})
+    product_df.rename(columns={'id': 'product_id', 'handle':'product_handle'}, inplace=True)
+
+    product_date_list = ['created_at', 'updated_at']
+    for pdate in product_date_list:
+        product_df[pdate] = product_df[pdate].apply(remove_timezone_offset)
+
+    product_df.columns = product_df.columns.str.upper()
+    print("Products: ", product_df.shape)
+
+
+    variants = variants_df.explode('variants')
+    variants = pd.json_normalize(variants['variants'])
+    variants.rename(columns = {'id' : 'variant_id'}, inplace=True)
+    variants_date_list = ['created_at','updated_at']
+
+    for vdate in variants_date_list:
+        variants[vdate] = variants[vdate].apply(remove_timezone_offset)
+
+    variants.columns = variants.columns.str.upper()
+    print("Variants: ", variants.shape)
+    
+    try:
+        product_df.to_sql('products', con=engine, index=False, if_exists='append', chunksize = 15000)
+        print("Products Data is loaded")
+        variants.to_sql('products_variants', con=engine, index=False, if_exists='append', chunksize = 15000)
+        print("Product Variation data is loaded")
+        
+    except Exception as e:
+        logger.error("ERROR: %s", str(e))
+    
+else:
+    print("As DataFrame is empty, so nothing to load.")
