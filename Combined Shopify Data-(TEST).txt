@@ -33,8 +33,8 @@ snowflake_conn = snowflake.connector.connect(
 engine = create_engine(f'snowflake://{snowflake_user}:{snowflake_password}@{snowflake_account}/{snowflake_database}/{snowflake_schema}')
 
 # Shopify API credentials
-token = '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'
-merchant = '1b1228-2'
+token = ''
+merchant = ''
 api_version = '2023-01'
 
 # Object list to fetch from Shopify
